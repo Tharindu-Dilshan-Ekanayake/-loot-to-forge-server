@@ -16,7 +16,8 @@
     "@colyseus/core": "^0.18.16",
     "@colyseus/schema": "^5.0.34",
     "@colyseus/ws-transport": "^0.18.3",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "mongodb": "^6.21.0"
   },
   "engines": {
     "node": ">=20"

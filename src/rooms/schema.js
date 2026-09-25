@@ -16,9 +16,13 @@ export const PlayerState = schema(
     /** 0 idle, 1 run, 2 air. */
     anim: t.uint8(),
     /** Bumped on every swing so remote clients can replay the attack animation. */
-    atk: t.uint16(),
+    atk: t.uint16().default(0),
     /** Bumped on every skill cast. */
-    skill: t.uint16(),
+    skill: t.uint16().default(0),
+    /** Which of the five combo moves the last swing was, so others see the same move. */
+    combo: t.uint8().default(0),
+    /** Bumped when the player takes off on a Q leap, so others see the jump-and-strike. */
+    leap: t.uint16().default(0),
     weapon: t.string(),
     enchant: t.string(),
     armor: t.string(),
@@ -51,7 +55,7 @@ export const EnemyState = schema(
     maxHp: t.number(),
     alive: t.boolean(),
     moving: t.boolean(),
-    atk: t.uint16(),
+    atk: t.uint16().default(0),
     /** Elite: a tougher, better-looting version of its kind (see ELITE). */
     elite: t.boolean(),
     /** Session that owns this enemy: every player fights their own copy of a stage. */

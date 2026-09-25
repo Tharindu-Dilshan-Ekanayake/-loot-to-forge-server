@@ -1,7 +1,7 @@
 import { Room } from '@colyseus/core'
 import { StateView } from '@colyseus/schema'
 
-import { allProfiles, getProfile, markDirty, newUid } from '../game/profiles.js'
+import { getProfile, markDirty, newUid, releaseProfile, topProfiles } from '../game/profiles.js'
 import {
   ARMOR_CLASS_ODDS,
   ARMOR_CLASSES,
@@ -130,10 +130,10 @@ export class ForgeRoom extends Room {
    * Lifecycle
    * ---------------------------------------------------------------------- */
 
-  onJoin(client, options = {}) {
+  async onJoin(client, options = {}) {
     const name = sanitizeName(options.name)
     const key = String(options.key || `guest:${client.sessionId}`).slice(0, 80)
-    const profile = getProfile(key, name)
+    const profile = await getProfile(key, name)
 
     const player = new PlayerState()
     player.name = name
@@ -176,6 +176,12 @@ export class ForgeRoom extends Room {
     this.state.players.delete(client.sessionId)
     this.despawnDungeonFor(client.sessionId)
     markDirty()
+    // With a database, save this player now and free their slot in memory.
+    if (s) {
+      const key = s.profile.key
+      const stillHere = [...this.sessions.values()].some((o) => o.profile.key === key)
+      releaseProfile(key, stillHere)
+    }
   }
 
   /* ------------------------------------------------------------------------
@@ -731,7 +737,7 @@ export class ForgeRoom extends Room {
         e.moving = false
         if (ai.cooldown <= 0) {
           ai.cooldown = type.atkCd * (0.9 + Math.random() * 0.2)
-          e.atk = (e.atk + 1) % 65535
+          e.atk = ((e.atk | 0) + 1) % 65535
           this.hurtPlayer(ai.target, type.dmg, now, e.x, e.z)
         }
         return
@@ -785,7 +791,7 @@ export class ForgeRoom extends Room {
   /** A ranged attack: the shot lands where the player stood, so it can be dodged. */
   shoot(id, e, type, ai, target, d) {
     ai.cooldown = type.atkCd * (0.9 + Math.random() * 0.2)
-    e.atk = (e.atk + 1) % 65535
+    e.atk = ((e.atk | 0) + 1) % 65535
     const sid = ai.target
     const tx = target.x
     const tz = target.z
@@ -868,7 +874,8 @@ export class ForgeRoom extends Room {
       // Allow a little jitter: client timers and network delivery aren't perfectly even.
       if (now - s.lastAttack < cd * 1000 * 0.8) return
       s.lastAttack = now
-      s.player.atk = (s.player.atk + 1) % 65535
+      s.player.atk = ((s.player.atk | 0) + 1) % 65535
+      s.player.combo = clamp(Math.floor(num(m.combo)), 0, 4)
 
       // Every swing trains: power (and so damage) grows with each click.
       const powerBefore = s.profile.power
@@ -893,7 +900,7 @@ export class ForgeRoom extends Room {
       const skill = weapon && skillFor(weapon.id)
       if (!skill || now < s.skillReadyAt - 150) return
       s.skillReadyAt = now + skill.cooldown * 1000
-      s.player.skill = (s.player.skill + 1) % 65535
+      s.player.skill = ((s.player.skill | 0) + 1) % 65535
 
       let dirX = num(m.dirX)
       let dirZ = num(m.dirZ, 1)
@@ -910,6 +917,14 @@ export class ForgeRoom extends Room {
 
       this.broadcast('skill', { by: s.client.sessionId, key: skill.key, x: ox, z: oz, dirX, dirZ })
       s.dirty = true
+    })
+
+    // Q take-off: only replayed to other players, the hits land with 'skill'.
+    on('leap', (s) => {
+      const now = Date.now()
+      if (now - (s.lastLeap || 0) < 1000) return
+      s.lastLeap = now
+      s.player.leap = ((s.player.leap | 0) + 1) % 65535
     })
 
     on('forge', (s, m) => this.handleForge(s, m))
@@ -1280,17 +1295,19 @@ export class ForgeRoom extends Room {
     markDirty()
   }
 
-  refreshLeaderboard() {
-    const list = [...allProfiles()]
-    const top = (score) =>
-      list
-        .map((p) => [p.name, score(p)])
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 7)
-    this.state.leaderboard = JSON.stringify({
-      power: top((p) => p.power),
-      rebirths: top((p) => p.rebirths),
-      playtime: top((p) => Math.floor(p.playtimeMs / 3_600_000 * 10) / 10),
-    })
+  async refreshLeaderboard() {
+    try {
+      const top = async (field, format = (v) => v) =>
+        (await topProfiles(field, 7)).map(({ name, value }) => [name, format(value)])
+      const [power, rebirths, playtime] = await Promise.all([
+        top('power'),
+        top('rebirths'),
+        top('playtimeMs', (ms) => Math.floor((ms / 3_600_000) * 10) / 10),
+      ])
+      this.state.leaderboard = JSON.stringify({ power, rebirths, playtime })
+    } catch (err) {
+      console.error('[room] leaderboard refresh failed', err)
+    }
   }
+
 }

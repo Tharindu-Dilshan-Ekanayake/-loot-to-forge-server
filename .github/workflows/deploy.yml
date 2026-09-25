@@ -1,0 +1,48 @@
+# Builds the server image, pushes it to this repo's GitHub Container Registry
+# and tells Bloxity Legion to roll it out.
+#   dev branch  -> dev channel  (https://loot-to-forge.dev.host.bloxity.io)
+#   main branch -> prod channel (https://loot-to-forge.host.bloxity.io)
+# Needs one repo secret: LEGION_DEPLOY_TOKEN.
+name: Deploy server
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GAME_ID: loot-to-forge
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick channel and image name
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then CHANNEL=prod; else CHANNEL=dev; fi
+          OWNER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "CHANNEL=${CHANNEL}" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/${OWNER}/${GAME_ID}-server:${CHANNEL}-${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push
+        run: |
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Deploy to Legion
+        env:
+          LEGION_DEPLOY_TOKEN: ${{ secrets.LEGION_DEPLOY_TOKEN }}
+        run: |
+          curl -sf -X POST "https://legion.bloxity.io/v1/apps/${GAME_ID}/deploy" \
+            -H "Authorization: Bearer ${LEGION_DEPLOY_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            -d "{\"channel\":\"${CHANNEL}\",\"image\":\"${IMAGE}\",\"version\":\"${GITHUB_SHA}\",\"seatCap\":8,\"maxReplicas\":5}"
