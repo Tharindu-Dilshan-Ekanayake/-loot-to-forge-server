@@ -70,7 +70,20 @@ const COMBAT_LOCK_MS = 4_000
 const CHARGE_DIST = 18
 const CHARGE_BOOST = 1.6
 const REGEN_DELAY_MS = 5_000
-const WORLD_LIMIT = 2000
+/** Past the far end of Stage 30 (the dungeon runs north ~2.2k from the castle). */
+const WORLD_LIMIT = 3000
+/**
+ * A melee blow is wound up this long before it lands, and only lands if you're
+ * still in reach: step away and it whiffs. Fair to dodge, and it reads as the
+ * enemy committing to a swing rather than hitting you the moment it touches you.
+ */
+const WINDUP_S = 0.38
+/** How far past its reach a wound-up blow still connects. */
+const WINDUP_GRACE = 0.9
+/** How quickly enemies change speed and heading (per second): no instant turns. */
+const ENEMY_STEER = 9
+/** Share of a player's movement an archer aims ahead of them (1 = perfect lead). */
+const SHOT_LEAD = 0.6
 const PROJECTILE_SPEED = 17
 /** How close a shot has to land to where the player now stands to hit. */
 const PROJECTILE_HIT_RADIUS = 2.2
@@ -107,6 +120,7 @@ export class ForgeRoom extends Room {
   onCreate() {
     this.setState(new GameState())
     this.state.leaderboard = '{}'
+    this.createdAt = Date.now()
 
     /** sessionId -> { profile, client, cooldowns, contributors… } */
     this.sessions = new Map()
@@ -155,6 +169,13 @@ export class ForgeRoom extends Room {
       /** Loot waiting on the ground for this player: id -> { ore, x, z, expires }. */
       drops: new Map(),
       lastLockedToast: 0,
+      /** Stages whose enemies are out (spawned by walking in through the barrier). */
+      active: new Set(),
+      /** Smoothed movement, for archers to aim ahead of it. */
+      velX: 0,
+      velZ: 0,
+      lastX: HUB.spawn[0],
+      lastZ: HUB.spawn[2],
     }
     this.sessions.set(client.sessionId, session)
     // What this client is sent of the filtered maps: its own dungeon, and the
@@ -219,7 +240,8 @@ export class ForgeRoom extends Room {
         e.ry = 0
         e.maxHp = type.hp
         e.hp = type.hp
-        e.alive = true
+        // Dormant until the player walks in through this stage's barrier (enterStage).
+        e.alive = false
         this.state.enemies.set(id, e)
         view?.add(e)
         this.ai.set(id, {
@@ -229,6 +251,13 @@ export class ForgeRoom extends Room {
           wanderX: e.x,
           wanderZ: e.z,
           wanderIn: Math.random() * 3,
+          // Each takes its own side of you, so a pack surrounds you rather than queueing.
+          slot: i * 2.39996,
+          vx: 0,
+          vz: 0,
+          windAt: 0,
+          strafe: Math.random() < 0.5 ? 1 : -1,
+          strafeIn: 1 + Math.random() * 2,
         })
       })
       stage.ores.forEach(([type, ox, oz], i) => {
@@ -568,6 +597,24 @@ export class ForgeRoom extends Room {
 
   tick(dt) {
     const now = Date.now()
+    this.state.st = (now - this.createdAt) >>> 0
+
+    // How each player is moving, smoothed: archers aim ahead of it.
+    for (const s of this.sessions.values()) {
+      const p = s.player
+      const k = Math.min(1, dt * 6)
+      if (dt > 0) {
+        const vx = (p.x - s.lastX) / dt
+        const vz = (p.z - s.lastZ) / dt
+        // A teleport isn't movement.
+        if (Math.hypot(vx, vz) < 40) {
+          s.velX += (vx - s.velX) * k
+          s.velZ += (vz - s.velZ) * k
+        }
+      }
+      s.lastX = p.x
+      s.lastZ = p.z
+    }
 
     // Enemies only run AI while their owner is in their stage; the rest heal up.
     for (const [id, e] of this.state.enemies) {
@@ -575,21 +622,27 @@ export class ForgeRoom extends Room {
       if (this.state.players.get(e.owner)?.stage === e.stage) this.stepEnemy(id, e, dt, now)
       else {
         e.moving = false
+        const ai = this.ai.get(id)
+        if (ai) {
+          ai.windAt = 0
+          ai.vx = 0
+          ai.vz = 0
+        }
         if (e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.1 * dt)
       }
     }
 
-    // Stage clear, per player: once every enemy in your copy is down, its gate
-    // and ores unlock for you.
+    // Stage clear, per player: once every enemy you've drawn out of a stage is
+    // down, its gate and ores unlock for you. It stays cleared (gate open, ores
+    // free) until you walk back in through its barrier: see enterStage.
     for (const [sid, s] of this.sessions) {
-      for (const stage of STAGES) {
-        const key = stageKey(sid, stage.id)
-        const at = this.state.stageRespawn.get(key)
+      for (const stageId of s.active) {
+        const key = stageKey(sid, stageId)
         const anyAlive = this.stageEnemies.get(key).some((id) => this.state.enemies.get(id).alive)
-        // It stays cleared (gate open, ores free) until you walk back in: see enterStage.
-        if (!anyAlive && !at) {
+        if (!anyAlive) {
+          s.active.delete(stageId)
           this.state.stageRespawn.set(key, now)
-          s.client.send('stageClear', { stage: stage.id })
+          s.client.send('stageClear', { stage: stageId })
         }
       }
     }
@@ -665,25 +718,69 @@ export class ForgeRoom extends Room {
     })
   }
 
-  /** `sid` has just entered `stageId`: a stage they'd cleared fills back up. */
+  /**
+   * `sid` has just come in through `stageId`'s barrier (on foot from the stage
+   * before, or by teleport): its enemies spawn now, fresh. Until then they stay
+   * dormant, so the stage ahead is empty while you fight this one. A stage whose
+   * enemies are already out is left as it is.
+   */
   enterStage(sid, stageId) {
-    const key = stageKey(sid, stageId)
-    if (!this.state.stageRespawn.get(key)) return
-    this.respawnStage(sid, stageId)
-    this.state.stageRespawn.set(key, 0)
+    const s = this.sessions.get(sid)
+    if (!s || s.active.has(stageId)) return
+    this.respawnStage(sid, stageId, true)
+    s.active.add(stageId)
+    this.state.stageRespawn.set(stageKey(sid, stageId), 0)
   }
 
-  respawnStage(sid, stageId) {
+  /** Puts a stage's enemies back at their posts at full health, alive or dormant. */
+  respawnStage(sid, stageId, alive) {
     for (const id of this.stageEnemies.get(stageKey(sid, stageId))) {
       const e = this.state.enemies.get(id)
       const ai = this.ai.get(id)
       e.hp = e.maxHp
-      e.alive = true
+      e.alive = alive
+      e.moving = false
       e.x = ai.homeX
       e.z = ai.homeZ
+      e.ry = 0
       ai.target = null
+      ai.windAt = 0
+      ai.vx = 0
+      ai.vz = 0
+      ai.cooldown = 0.8 + Math.random() * 0.6
       this.contrib.delete(id)
     }
+  }
+
+  /**
+   * Back in the lobby: the whole dungeon resets for this player. Loot left on the
+   * ground is gone, every stage's enemies go dormant, gates close and ore nodes
+   * grow back, ready for a fresh run.
+   */
+  resetDungeonFor(s) {
+    const sid = s.client.sessionId
+    for (const stage of STAGES) {
+      this.respawnStage(sid, stage.id, false)
+      this.state.stageRespawn.set(stageKey(sid, stage.id), 0)
+    }
+    s.active.clear()
+    for (const o of this.state.ores.values()) {
+      if (o.event || o.owner !== sid) continue
+      o.hp = o.maxHp
+      o.alive = true
+      o.timer = 0
+    }
+    if (s.drops.size) {
+      const ids = [...s.drops.keys()]
+      s.drops.clear()
+      s.client.send('dropGone', { ids })
+    }
+  }
+
+  /** Records `s` leaving the dungeon (walking out, teleporting home, dying). */
+  toLobby(s) {
+    if (s.player.stage > 0 || s.active.size || s.drops.size) this.resetDungeonFor(s)
+    s.player.stage = 0
   }
 
   stepEnemy(id, e, dt, now) {
@@ -711,36 +808,74 @@ export class ForgeRoom extends Room {
       if (target) ai.cooldown = Math.max(ai.cooldown, 0.35)
     }
 
-    let goalX
-    let goalZ
-    let speed = type.speed
+    // A blow wound up earlier lands now, if you're still in reach: step out of
+    // the way and it whiffs.
+    if (ai.windAt && now >= ai.windAt) {
+      ai.windAt = 0
+      const t = ai.target ? this.state.players.get(ai.target) : null
+      if (t && t.stage === e.stage && dist2d(e.x, e.z, t.x, t.z) <= reach + WINDUP_GRACE) this.hurtPlayer(ai.target, type.dmg, now, e.x, e.z)
+    }
+
+    // The velocity it wants this step; steering eases into it below.
+    let wantX = 0
+    let wantZ = 0
     if (target) {
-      const d = dist2d(e.x, e.z, target.x, target.z)
-      goalX = target.x
-      goalZ = target.z
-      if (d > CHARGE_DIST) speed *= CHARGE_BOOST
+      const dx = target.x - e.x
+      const dz = target.z - e.z
+      const d = Math.hypot(dx, dz) || 0.001
+      const ux = dx / d
+      const uz = dz / d
+      const speed = type.speed * (d > CHARGE_DIST ? CHARGE_BOOST : 1)
+      // Always eyes on you, even while circling or backing off.
+      e.ry = Math.atan2(dx, dz)
+      ai.strafeIn -= dt
+      if (ai.strafeIn <= 0) {
+        ai.strafeIn = 1.4 + Math.random() * 2.2
+        ai.strafe = -ai.strafe
+      }
       if (type.ranged) {
-        if (d <= type.ranged) {
-          e.ry = Math.atan2(target.x - e.x, target.z - e.z)
+        // Keep a shooting distance: back off if you close in, sidestep while
+        // reloading so they're harder to pin down, and close in if you're out of range.
+        const keep = Math.min(7.5, type.ranged * 0.5)
+        if (d > type.ranged - 0.5) {
+          wantX = ux * speed
+          wantZ = uz * speed
+        } else {
           if (ai.cooldown <= 0) this.shoot(id, e, type, ai, target, d)
-          if (d > 6) {
-            e.moving = false
-            return
-          }
-          // Too close: back off while reloading.
-          goalX = e.x - (target.x - e.x)
-          goalZ = e.z - (target.z - e.z)
-          speed *= 0.7
+          const back = d < keep ? 0.8 : 0
+          wantX = (-ux * back + -uz * ai.strafe * 0.45) * speed
+          wantZ = (-uz * back + ux * ai.strafe * 0.45) * speed
         }
+      } else if (ai.windAt) {
+        // Committed to the swing: plant the feet.
       } else if (d <= reach) {
-        e.ry = Math.atan2(target.x - e.x, target.z - e.z)
-        e.moving = false
         if (ai.cooldown <= 0) {
+          // Wind up (the swing plays now), land it at the end of the chop.
           ai.cooldown = type.atkCd * (0.9 + Math.random() * 0.2)
+          ai.windAt = now + WINDUP_S * 1000
           e.atk = ((e.atk | 0) + 1) % 65535
-          this.hurtPlayer(ai.target, type.dmg, now, e.x, e.z)
+        } else {
+          // Circle you while the next blow comes ready.
+          wantX = -uz * ai.strafe * speed * 0.3
+          wantZ = ux * ai.strafe * speed * 0.3
         }
-        return
+      } else {
+        // From afar, run straight at you; up close, take its own side of you, so
+        // a pack closes in from all around instead of queueing up in a line.
+        let gx = target.x
+        let gz = target.z
+        if (d < 7) {
+          const ring = reach * 0.8
+          gx += Math.sin(ai.slot) * ring
+          gz += Math.cos(ai.slot) * ring
+        }
+        const gdx = gx - e.x
+        const gdz = gz - e.z
+        const gd = Math.hypot(gdx, gdz)
+        if (gd > 0.25) {
+          wantX = (gdx / gd) * speed
+          wantZ = (gdz / gd) * speed
+        }
       }
     } else {
       // Wander near home; drift back and heal when no one is around.
@@ -750,21 +885,26 @@ export class ForgeRoom extends Room {
         ai.wanderX = ai.homeX + (Math.random() - 0.5) * 8
         ai.wanderZ = ai.homeZ + (Math.random() - 0.5) * 8
       }
-      goalX = ai.wanderX
-      goalZ = ai.wanderZ
-      speed *= 0.4
+      const gdx = ai.wanderX - e.x
+      const gdz = ai.wanderZ - e.z
+      const gd = Math.hypot(gdx, gdz)
+      if (gd > 0.3) {
+        wantX = (gdx / gd) * type.speed * 0.4
+        wantZ = (gdz / gd) * type.speed * 0.4
+      }
       if (e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.1 * dt)
     }
 
-    const dx = goalX - e.x
-    const dz = goalZ - e.z
-    const d = Math.hypot(dx, dz)
-    if (d > 0.3) {
-      const step = Math.min(d, speed * dt)
-      e.x += (dx / d) * step
-      e.z += (dz / d) * step
-      // Archers backing off keep facing their target.
-      if (!type.ranged || !target) e.ry = Math.atan2(dx, dz)
+    // Steer into the wanted velocity rather than snapping to it: they speed up,
+    // slow down and turn smoothly instead of jittering on the spot.
+    const k = 1 - Math.exp(-ENEMY_STEER * dt)
+    ai.vx += (wantX - ai.vx) * k
+    ai.vz += (wantZ - ai.vz) * k
+    const v = Math.hypot(ai.vx, ai.vz)
+    if (v > 0.2) {
+      e.x += ai.vx * dt
+      e.z += ai.vz * dt
+      if (!target) e.ry = Math.atan2(ai.vx, ai.vz)
       e.moving = true
     } else {
       e.moving = false
@@ -788,14 +928,20 @@ export class ForgeRoom extends Room {
     e.z = clamp(e.z, b.zNorth + 2, b.zSouth - 2)
   }
 
-  /** A ranged attack: the shot lands where the player stood, so it can be dodged. */
+  /**
+   * A ranged attack, aimed partly ahead of where you're running: keep a steady
+   * line and it finds you, change direction and it misses.
+   */
   shoot(id, e, type, ai, target, d) {
     ai.cooldown = type.atkCd * (0.9 + Math.random() * 0.2)
     e.atk = ((e.atk | 0) + 1) % 65535
     const sid = ai.target
-    const tx = target.x
-    const tz = target.z
-    const flight = d / PROJECTILE_SPEED
+    const s = this.sessions.get(sid)
+    const lead = (d / PROJECTILE_SPEED) * SHOT_LEAD
+    const b = stageBounds(e.stage)
+    const tx = clamp(target.x + (s?.velX || 0) * lead, b.x0, b.x1)
+    const tz = clamp(target.z + (s?.velZ || 0) * lead, b.zNorth, b.zSouth)
+    const flight = dist2d(e.x, e.z, tx, tz) / PROJECTILE_SPEED
     const fromX = e.x
     const fromZ = e.z
     this.sessions.get(sid)?.client.send('shot', { id, kind: e.kind, x: fromX, z: fromZ, tx, tz, t: flight })
@@ -816,7 +962,7 @@ export class ForgeRoom extends Room {
     s.client.send('hurt', { amount, x: fromX, z: fromZ })
     if (player.hp <= 0) {
       player.hp = player.maxHp
-      player.stage = 0
+      this.toLobby(s)
       ;[player.x, player.y, player.z] = HUB.spawn
       s.client.send('died', { spawn: HUB.spawn })
       for (const ai of this.ai.values()) if (ai.target === sessionId) ai.target = null
@@ -846,6 +992,7 @@ export class ForgeRoom extends Room {
       p.z = clamp(num(m.z, p.z), -WORLD_LIMIT, WORLD_LIMIT)
       p.ry = num(m.ry, p.ry)
       p.anim = clamp(Math.floor(num(m.anim)), 0, 2)
+      p.mt = clamp(Math.floor(num(m.mt)), 0, 0xffffffff)
       const stage = stageAt(p.x, p.z)
       // Walking into a stage you aren't strong enough for bounces you to the hub.
       // Checked on entry only, so swapping gear mid-stage never throws you out.
@@ -853,7 +1000,12 @@ export class ForgeRoom extends Room {
       if (lock) {
         this.toast(s.client, `${lock.text}!`, 'error')
         s.client.send('teleport', { pos: HUB.spawn, stage: 0 })
-        p.stage = 0
+        this.toLobby(s)
+        return
+      }
+      // Walked out of the dungeon: it resets behind you.
+      if (stage === 0 && p.stage > 0) {
+        this.toLobby(s)
         return
       }
       if (stage > s.profile.maxStage) {
@@ -1038,9 +1190,10 @@ export class ForgeRoom extends Room {
         const tower = stage === HUB.tower.stage && s.profile.rebirths >= HUB.tower.rebirths
         if (stage > s.profile.maxStage && !tower) return this.toast(s.client, 'Reach this stage on foot first!', 'error')
       }
-      // Teleporting into a stage counts as entering it.
+      // Teleporting into a stage counts as entering it; home resets the dungeon.
       if (def && s.player.stage !== stage) this.enterStage(s.client.sessionId, stage)
-      s.player.stage = def ? stage : 0
+      if (def) s.player.stage = stage
+      else this.toLobby(s)
       s.client.send('teleportOk', { stage: s.player.stage })
     })
 

@@ -45,6 +45,10 @@ export const ORES = {
   amethyst: { name: 'Amethyst', rarity: 'Epic', color: '#b35bff', color2: '#4a1486', mult: 2.0, sell: 80, hp: 5000 },
   emerald: { name: 'Emerald', rarity: 'Epic', color: '#19f08a', color2: '#006b3a', mult: 2.4, sell: 100, hp: 7000 },
   obsidian: { name: 'Obsidian', rarity: 'Legendary', color: '#5b3a8e', color2: '#120622', mult: 3.0, sell: 160, hp: 40000 },
+  // The deep dungeon (Stages 21–30).
+  bloodstone: { name: 'Bloodstone', rarity: 'Mythic', color: '#e0203a', color2: '#3a0008', mult: 5.8, sell: 1400, hp: 1200000 },
+  starsteel: { name: 'Starsteel', rarity: 'Eternal', color: '#9fd8ff', color2: '#1a3a7a', mult: 7.2, sell: 3200, hp: 4000000 },
+  chaosite: { name: 'Chaosite', rarity: 'Secret', color: '#ff2bd6', color2: '#12001f', mult: 9.5, sell: 7500, hp: 15000000 },
   // Event ores: rare, but kept only a step above the ores around them, so one
   // lucky find can't carry a player to the end of the game.
   sunstone: { name: 'Sunstone', rarity: 'Legendary', color: '#ffb000', color2: '#ff5a00', mult: 2.2, sell: 110, hp: 6000, event: true },
@@ -60,7 +64,7 @@ export const ORES = {
 export const EVENT_ORES = [
   { ore: 'sunstone', label: 'Legendary ore', stages: [3, 12], everyMs: 8 * 60 * 1000, lifeMs: 3 * 60 * 1000 },
   { ore: 'aetherite', label: 'Eternal ore', stages: [8, 17], everyMs: 20 * 60 * 1000, lifeMs: 4 * 60 * 1000 },
-  { ore: 'voidcrystal', label: 'Secret ore', stages: [12, 20], everyMs: 40 * 60 * 1000, lifeMs: 5 * 60 * 1000 },
+  { ore: 'voidcrystal', label: 'Secret ore', stages: [12, 30], everyMs: 40 * 60 * 1000, lifeMs: 5 * 60 * 1000 },
 ]
 
 /* ---------------------------------------------------------------------------
@@ -451,8 +455,9 @@ export const HUB = {
 export const CLICK_POWER = 1
 
 /**
- * Training dummies, all in one row of pads along the west side (weakest in the
- * south). Hitting one grants power × mult; `theme` picks the pad and its effect.
+ * Training dummies on pads along the west side: the first row against the wall
+ * (weakest in the south), a second row beside it, either side of the road.
+ * Hitting one grants power × mult; `theme` picks the pad and its effect.
  */
 export const DUMMIES = [
   { id: 'd0', pos: [-33.8, 0.3, 30.4], mult: 1, rebirths: 0, look: 'target', theme: 'basic' },
@@ -461,6 +466,10 @@ export const DUMMIES = [
   { id: 'd3', pos: [-33.8, 0.3, 0], mult: 4, rebirths: 5, look: 'skeleton', theme: 'grave' },
   { id: 'd4', pos: [-33.8, 0.3, -10.2], mult: 6, rebirths: 9, look: 'frost', theme: 'ice' },
   { id: 'd5', pos: [-33.8, 0.3, -20.3], mult: 10, rebirths: 15, look: 'demon', theme: 'lava' },
+  { id: 'd6', pos: [-21.6, 0.3, 31.2], mult: 15, rebirths: 12, look: 'void', theme: 'void' },
+  { id: 'd7', pos: [-21.6, 0.3, 21.1], mult: 20, rebirths: 16, look: 'shadow', theme: 'shadow' },
+  { id: 'd8', pos: [-21.6, 0.3, 11], mult: 28, rebirths: 20, look: 'crystal', theme: 'crystal' },
+  { id: 'd9', pos: [-21.6, 0.3, -11], mult: 40, rebirths: 25, look: 'celestial', theme: 'celestial' },
 ]
 
 /**
@@ -557,6 +566,49 @@ const ENEMY_BASE = {
   cosmicslime: { name: 'Cosmic Monk', body: 'humanoid', hp: 17000000, dmg: 1000, speed: 4.0, scale: 1.45, atkCd: 1.3 },
   celestialseraph: { name: 'Celestial Seraph', body: 'humanoid', hp: 18000000, dmg: 1020, speed: 4.8, scale: 1.3, atkCd: 2.0, ranged: 16 },
   starsovereign: { name: 'Star Sovereign', body: 'humanoid', hp: 150000000, dmg: 1800, speed: 3.8, scale: 3, atkCd: 1.6, boss: true },
+  // Stage 21 — Bloodmoon Marsh
+  bogfiend: { name: 'Bog Fiend', body: 'humanoid', hp: 36000000, dmg: 1300, speed: 5.2, scale: 1.35, atkCd: 1.1 },
+  marshwitch: { name: 'Marsh Witch', body: 'humanoid', hp: 30000000, dmg: 1250, speed: 4.4, scale: 1.2, atkCd: 2.0, ranged: 16 },
+  swampbrute: { name: 'Swamp Brute', body: 'golem', hp: 42000000, dmg: 1400, speed: 3.6, scale: 1.65, atkCd: 1.5 },
+  // Stage 22 — Bone Wastes
+  bonereaver: { name: 'Bone Reaver', body: 'humanoid', hp: 75000000, dmg: 1650, speed: 5.6, scale: 1.3, atkCd: 1.0 },
+  deathcaller: { name: 'Deathcaller', body: 'humanoid', hp: 64000000, dmg: 1600, speed: 4.4, scale: 1.2, atkCd: 2.0, ranged: 16 },
+  bonecolossus: { name: 'Bone Colossus', body: 'golem', hp: 88000000, dmg: 1800, speed: 3.5, scale: 1.75, atkCd: 1.6 },
+  // Stage 23 — Plague Catacombs
+  rotknight: { name: 'Rot Knight', body: 'humanoid', hp: 155000000, dmg: 2100, speed: 4.6, scale: 1.35, atkCd: 1.2 },
+  plaguedoctor: { name: 'Plague Doctor', body: 'humanoid', hp: 135000000, dmg: 2000, speed: 4.4, scale: 1.2, atkCd: 2.0, ranged: 16 },
+  ghoulbrute: { name: 'Ghoul Brute', body: 'humanoid', hp: 175000000, dmg: 2250, speed: 5.4, scale: 1.45, atkCd: 1.1 },
+  // Stage 24 — Iron Fortress
+  ironlegion: { name: 'Iron Legionnaire', body: 'humanoid', hp: 320000000, dmg: 2650, speed: 4.6, scale: 1.35, atkCd: 1.1 },
+  siegecaller: { name: 'Siege Crossbowman', body: 'humanoid', hp: 280000000, dmg: 2550, speed: 4.0, scale: 1.25, atkCd: 2.0, ranged: 17 },
+  warforged: { name: 'Warforged', body: 'golem', hp: 380000000, dmg: 2900, speed: 3.6, scale: 1.8, atkCd: 1.6 },
+  ironwarlord: { name: 'Iron Warlord', body: 'humanoid', hp: 2600000000, dmg: 4500, speed: 3.9, scale: 3, atkCd: 1.6, boss: true },
+  // Stage 25 — Abyssal Trench
+  deepone: { name: 'Deep One', body: 'humanoid', hp: 660000000, dmg: 3350, speed: 5.2, scale: 1.4, atkCd: 1.1 },
+  abyssalpriest: { name: 'Abyssal Priest', body: 'humanoid', hp: 580000000, dmg: 3200, speed: 4.4, scale: 1.25, atkCd: 2.0, ranged: 16 },
+  trenchgolem: { name: 'Trench Golem', body: 'golem', hp: 760000000, dmg: 3600, speed: 3.5, scale: 1.8, atkCd: 1.6 },
+  // Stage 26 — Corrupted Grove
+  blightwalker: { name: 'Blightwalker', body: 'humanoid', hp: 1350000000, dmg: 4200, speed: 5.6, scale: 1.4, atkCd: 1.0 },
+  thornwitch: { name: 'Thorn Witch', body: 'humanoid', hp: 1200000000, dmg: 4050, speed: 4.6, scale: 1.25, atkCd: 2.0, ranged: 17 },
+  rotgolem: { name: 'Rot Golem', body: 'golem', hp: 1550000000, dmg: 4500, speed: 3.6, scale: 1.85, atkCd: 1.6 },
+  // Stage 27 — Blood Cathedral
+  bloodknight: { name: 'Blood Knight', body: 'humanoid', hp: 2800000000, dmg: 5300, speed: 4.8, scale: 1.45, atkCd: 1.1 },
+  hemomancer: { name: 'Hemomancer', body: 'humanoid', hp: 2400000000, dmg: 5100, speed: 4.6, scale: 1.3, atkCd: 2.0, ranged: 17 },
+  gargoyle: { name: 'Gargoyle', body: 'golem', hp: 3200000000, dmg: 5700, speed: 4.2, scale: 1.75, atkCd: 1.4 },
+  bloodcardinal: { name: 'Blood Cardinal', body: 'humanoid', hp: 23000000000, dmg: 9000, speed: 4.0, scale: 3.1, atkCd: 1.6, boss: true },
+  // Stage 28 — Ashen Wastes
+  ashreaver: { name: 'Ash Reaver', body: 'humanoid', hp: 5800000000, dmg: 6700, speed: 5.8, scale: 1.45, atkCd: 1.0 },
+  cinderseer: { name: 'Cinder Seer', body: 'humanoid', hp: 5000000000, dmg: 6500, speed: 4.6, scale: 1.3, atkCd: 2.0, ranged: 17 },
+  obsidiangolem: { name: 'Obsidian Golem', body: 'golem', hp: 6600000000, dmg: 7200, speed: 3.6, scale: 1.9, atkCd: 1.6 },
+  // Stage 29 — Eclipse Citadel
+  eclipseblade: { name: 'Eclipse Blade', body: 'humanoid', hp: 12000000000, dmg: 8400, speed: 6.0, scale: 1.45, atkCd: 1.0 },
+  voidoracle: { name: 'Void Oracle', body: 'humanoid', hp: 10500000000, dmg: 8100, speed: 4.8, scale: 1.3, atkCd: 2.0, ranged: 18 },
+  eclipsetitan: { name: 'Eclipse Titan', body: 'golem', hp: 13500000000, dmg: 9000, speed: 3.8, scale: 1.95, atkCd: 1.5 },
+  // Stage 30 — The Endless Abyss
+  doomknight: { name: 'Doom Knight', body: 'humanoid', hp: 25000000000, dmg: 10500, speed: 5.0, scale: 1.5, atkCd: 1.0 },
+  chaosmage: { name: 'Chaos Mage', body: 'humanoid', hp: 22000000000, dmg: 10000, speed: 4.8, scale: 1.35, atkCd: 2.0, ranged: 18 },
+  abyssbeast: { name: 'Abyss Behemoth', body: 'golem', hp: 28000000000, dmg: 11500, speed: 3.8, scale: 2, atkCd: 1.5 },
+  abyssemperor: { name: 'Abyss Emperor', body: 'humanoid', hp: 220000000000, dmg: 18000, speed: 4.0, scale: 3.4, atkCd: 1.5, boss: true },
 }
 
 /**
@@ -701,6 +753,37 @@ const STAGE_DEFS = [
   [20, 'Celestial Summit', 'celestial', 21000000, 7,
     [['starsovereign', 0, -14], ['starguard', -9, 2], ['starguard', 9, 2], ['cosmicslime', -4, 8], ['cosmicslime', 4, 8, 'elite'], ['celestialseraph', -14, -18], ['celestialseraph', 14, -18]],
     [['voidcrystal', -16, 12], ['voidcrystal', 16, 12], ['voidcrystal', -16, -6], ['voidcrystal', 16, -6], ['voidcrystal', -15, -22]]],
+  // The deep dungeon: past the summit, the way turns dark.
+  [21, 'Bloodmoon Marsh', 'marsh', 44000000, 8,
+    [['bogfiend', -8, 4], ['bogfiend', 8, 4], ['marshwitch', 0, -4], ['swampbrute', -11, -14], ['swampbrute', 11, -14], ['marshwitch', -4, -20], ['bogfiend', 6, -20, 'elite']],
+    [['voidcrystal', -16, 12], ['bloodstone', 16, 12], ['voidcrystal', -16, -6], ['bloodstone', 16, -6], ['voidcrystal', -15, -22]]],
+  [22, 'Bone Wastes', 'bonewaste', 92000000, 8,
+    [['bonereaver', -8, 4], ['bonereaver', 8, 4], ['deathcaller', 0, -4], ['bonecolossus', -11, -14], ['bonecolossus', 11, -14], ['deathcaller', -4, -20], ['bonereaver', 6, -20, 'elite']],
+    [['bloodstone', -16, 12], ['voidcrystal', 16, 12], ['bloodstone', -16, -6], ['voidcrystal', 16, -6], ['bloodstone', -15, -22]]],
+  [23, 'Plague Catacombs', 'plague', 190000000, 9,
+    [['rotknight', -8, 4], ['rotknight', 8, 4], ['plaguedoctor', 0, -4], ['ghoulbrute', -13, -14], ['ghoulbrute', 13, -14], ['plaguedoctor', -4, -20], ['rotknight', 6, -20, 'elite']],
+    [['bloodstone', -16, 12], ['bloodstone', 16, 12], ['starsteel', -16, -6], ['bloodstone', 16, -6], ['bloodstone', -15, -22]]],
+  [24, 'Iron Fortress', 'fortress', 400000000, 9,
+    [['ironwarlord', 0, -14], ['ironlegion', -9, 2], ['ironlegion', 9, 2], ['warforged', -4, 8], ['warforged', 4, 8, 'elite'], ['siegecaller', -14, -18], ['siegecaller', 14, -18]],
+    [['starsteel', -16, 12], ['bloodstone', 16, 12], ['starsteel', -16, -6], ['bloodstone', 16, -6], ['starsteel', -15, -22]]],
+  [25, 'Abyssal Trench', 'abyss', 830000000, 10,
+    [['deepone', -8, 4], ['deepone', 8, 4], ['abyssalpriest', 0, -4], ['trenchgolem', -11, -14], ['trenchgolem', 11, -14], ['abyssalpriest', -4, -20], ['deepone', 6, -20, 'elite']],
+    [['starsteel', -16, 12], ['starsteel', 16, 12], ['bloodstone', -16, -6], ['starsteel', 16, -6], ['starsteel', -15, -22]]],
+  [26, 'Corrupted Grove', 'grove', 1700000000, 10,
+    [['blightwalker', -8, 4], ['blightwalker', 8, 4], ['thornwitch', 0, -4], ['rotgolem', -11, -14], ['rotgolem', 11, -14], ['thornwitch', -4, -20], ['blightwalker', 6, -20, 'elite']],
+    [['starsteel', -16, 12], ['starsteel', 16, 12], ['starsteel', -16, -6], ['starsteel', 16, -6], ['starsteel', -15, -22]]],
+  [27, 'Blood Cathedral', 'cathedral', 3600000000, 11,
+    [['bloodcardinal', 0, -14], ['bloodknight', -9, 2], ['bloodknight', 9, 2], ['gargoyle', -4, 8], ['gargoyle', 4, 8, 'elite'], ['hemomancer', -14, -18], ['hemomancer', 14, -18]],
+    [['starsteel', -16, 12], ['chaosite', 16, 12], ['starsteel', -16, -6], ['starsteel', 16, -6], ['starsteel', -15, -22]]],
+  [28, 'Ashen Wastes', 'ashland', 7500000000, 11,
+    [['ashreaver', -8, 4], ['ashreaver', 8, 4], ['cinderseer', 0, -4], ['obsidiangolem', -11, -14], ['obsidiangolem', 11, -14], ['cinderseer', -4, -20], ['ashreaver', 6, -20, 'elite']],
+    [['chaosite', -16, 12], ['starsteel', 16, 12], ['chaosite', -16, -6], ['starsteel', 16, -6], ['chaosite', -15, -22]]],
+  [29, 'Eclipse Citadel', 'eclipse', 15500000000, 12,
+    [['eclipseblade', -8, 4], ['eclipseblade', 8, 4], ['voidoracle', 0, -4], ['eclipsetitan', -11, -14], ['eclipsetitan', 11, -14], ['voidoracle', -4, -20], ['eclipseblade', 6, -20, 'elite']],
+    [['chaosite', -16, 12], ['chaosite', 16, 12], ['starsteel', -16, -6], ['chaosite', 16, -6], ['chaosite', -15, -22]]],
+  [30, 'The Endless Abyss', 'endless', 32000000000, 12,
+    [['abyssemperor', 0, -14], ['doomknight', -9, 2], ['doomknight', 9, 2], ['abyssbeast', -4, 8], ['abyssbeast', 4, 8, 'elite'], ['chaosmage', -14, -18], ['chaosmage', 14, -18]],
+    [['chaosite', -16, 12], ['chaosite', 16, 12], ['chaosite', -16, -6], ['chaosite', 16, -6], ['chaosite', -15, -22]]],
 ]
 
 /** How much of a stage's recommended Damage its gate asks for. */
