@@ -2,7 +2,7 @@ import { matchMaker, Server } from '@colyseus/core'
 import { Encoder } from '@colyseus/schema'
 import { WebSocketTransport } from '@colyseus/ws-transport'
 
-import { saveNow } from './game/profiles.js'
+import { initProfiles, saveNow } from './game/profiles.js'
 import { ForgeRoom } from './rooms/ForgeRoom.js'
 import { MAX_PLAYERS_PER_ROOM } from './shared/gameData.js'
 
@@ -33,8 +33,12 @@ const server = new Server({
   },
 })
 
+await initProfiles()
+
 server.define(ROOM_NAME, ForgeRoom)
+// SIGTERM (a deploy or scale-down): Colyseus closes the rooms, then everyone's
+// progress is written out before the process exits.
 server.onShutdown(() => saveNow())
 
 await server.listen(PORT)
-console.log(`⚒  Loot to Forge server listening on ws://localhost:${PORT}`)
+console.log(`⚒  Loot to Forge server listening on port ${PORT}`)
