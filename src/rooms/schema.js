@@ -15,6 +15,12 @@ export const PlayerState = schema(
     ry: t.float32(),
     /** 0 idle, 1 run, 2 air. */
     anim: t.uint8(),
+    /**
+     * The sender's clock (ms) when it stood at x/y/z. Others play the movement
+     * back on this clock rather than on when each update happened to arrive, so
+     * uneven delivery doesn't turn into uneven walking. 0 from old clients.
+     */
+    mt: t.uint32().default(0),
     /** Bumped on every swing so remote clients can replay the attack animation. */
     atk: t.uint16().default(0),
     /** Bumped on every skill cast. */
@@ -84,6 +90,12 @@ export const OreState = schema(
 
 export const GameState = schema(
   {
+    /**
+     * Server clock (ms since the room opened) as of the last simulation step.
+     * Every patch carries it, so clients play enemies back on the server's own
+     * timeline instead of on uneven arrival times.
+     */
+    st: t.uint32().default(0),
     players: t.map(PlayerState),
     /**
      * Filtered per client (StateView): each player only receives their own
